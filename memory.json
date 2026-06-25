@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "model": "claude-haiku-4-5",
+  "capture": "both",
+  "injection": { "scope": "both", "digestMaxEntries": 20 },
+  "pruning": { "ttlDays": 90, "maxEntries": 200, "consolidateEverySessions": 10 },
+  "useFtsIndex": false
+}
