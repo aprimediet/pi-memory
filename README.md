@@ -2,6 +2,34 @@
 
 Persistent, self-managing memory for the [pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent). Remembers durable facts, decisions, and progress across sessions — per **project** and **globally** — decides on its own what is worth saving, restores context at session start, and prunes stale memory. Inspired by claude-mem, but deliberately **process-per-call** (no resident worker/daemon).
 
+## Install
+
+Run a single command — `pi` will fetch the package from npm and wire it into your project's `.pi/settings.json` for you:
+
+```bash
+pi install npm:@aprimediet/memory
+```
+
+## Configuration
+
+Config resolves **per-project `~/.pi/projects/<id>/memory.json` → global default `~/.pi/agent/memory.json` → bundled default → env → flags**, re-read on every access. The bundled default is seeded to the global default path on first run. (Per-project config lives in the global dir too — nothing but the marker is written to your working tree.)
+
+```json
+{
+  "enabled": true,
+  "model": "claude-haiku-4-5",
+  "capture": "both",
+  "injection": { "scope": "both", "digestMaxEntries": 20 },
+  "pruning": { "ttlDays": 90, "maxEntries": 200, "consolidateEverySessions": 10 },
+  "useFtsIndex": false
+}
+```
+
+- Flags: `--memory-model <pattern>`, `--memory-disabled`, `--memory-capture <tool|background|both>`.
+- Env: `MEMORY_MODEL`, `MEMORY_DISABLED=1`.
+- `capture`: `tool` (manual only), `background` (distiller only), `both`.
+- `useFtsIndex`: enable SQLite FTS search (requires the optional `better-sqlite3` dependency; falls back to file keyword scan when absent).
+
 ## Storage model — clean working tree
 
 The only thing written into your working tree is a single identifier file, `<cwd>/.pi/<project-id>.md`. **Every** memory artifact (entries, index, thoughts, db, config) lives globally, keyed by that project id:
@@ -37,34 +65,6 @@ The project id is `<dir-slug>-<8charPathHash>`, recorded in the marker — so it
 - `memory_search { query, scope?, limit? }` — recall entries.
 - `memory_forget { id? | query?, scope? }` — soft-archive entries.
 - `/memory status | timeline | list [scope] | search <q> | prune | forget <id> | distill`
-
-## Configuration
-
-Config resolves **per-project `~/.pi/projects/<id>/memory.json` → global default `~/.pi/agent/memory.json` → bundled default → env → flags**, re-read on every access. The bundled default is seeded to the global default path on first run. (Per-project config lives in the global dir too — nothing but the marker is written to your working tree.)
-
-```json
-{
-  "enabled": true,
-  "model": "claude-haiku-4-5",
-  "capture": "both",
-  "injection": { "scope": "both", "digestMaxEntries": 20 },
-  "pruning": { "ttlDays": 90, "maxEntries": 200, "consolidateEverySessions": 10 },
-  "useFtsIndex": false
-}
-```
-
-- Flags: `--memory-model <pattern>`, `--memory-disabled`, `--memory-capture <tool|background|both>`.
-- Env: `MEMORY_MODEL`, `MEMORY_DISABLED=1`.
-- `capture`: `tool` (manual only), `background` (distiller only), `both`.
-- `useFtsIndex`: enable SQLite FTS search (requires the optional `better-sqlite3` dependency; falls back to file keyword scan when absent).
-
-## Install
-
-Add the package to your project's `.pi/settings.json`:
-
-```json
-{ "packages": ["../extensions/memory"] }
-```
 
 ## Notes & boundaries
 
