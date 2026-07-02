@@ -1,74 +1,124 @@
+<!-- prettier-ignore -->
+<div align="center">
+
+<img src="./docs/images/icon.png" alt="" align="center" height="96" />
+
 # @aprimediet/memory
 
-Persistent, self-managing memory for the [pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent). Remembers durable facts, decisions, and progress across sessions — per **project** and **globally** — decides on its own what is worth saving, restores context at session start, and prunes stale memory. Inspired by claude-mem, but deliberately **process-per-call** (no resident worker/daemon).
+*Persistent, self-managing memory for the pi coding agent*
 
-## Install
+[![npm version](https://img.shields.io/npm/v/@aprimediet/memory?style=flat-square)](https://www.npmjs.com/package/@aprimediet/memory)
+[![Node.js](https://img.shields.io/badge/Node.js->=20-3c873a?style=flat-square)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-blue?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-Run a single command — `pi` will fetch the package from npm and wire it into your project's `.pi/settings.json` for you:
+⭐ If you like this project, star it on GitHub — it helps a lot!
+
+[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Configuration](#configuration) • [Architecture](#architecture) • [Troubleshooting](#troubleshooting)
+
+</div>
+
+## Overview
+
+`@aprimediet/memory` gives the pi coding agent a persistent memory system that survives across sessions. It remembers durable facts, decisions, progress, and preferences — and keeps them organized by project scope.
+
+The working tree stays clean: the only file written into `<cwd>/.pi` is a single `<project-id>.md` marker. All memory artifacts live globally under `~/.pi/projects/<project-id>/`, with a reserved `~/.pi/projects/_global/` for cross-project ("global") memory.
+
+## Features
+
+- **Persistent Memory** — Save and recall durable facts, decisions, progress, and preferences across sessions
+- **Dual Scope** — `project` scope for repo-specific memory, `global` scope for cross-project knowledge
+- **Background Distillation** — Automatically distills session transcripts into durable memory entries in the background
+- **Smart Search** — Keyword search over memory entries with optional SQLite FTS5 acceleration
+- **Heuristic Pruning** — Automatic cleanup of stale, unused, or superseded entries
+- **Timeline Widget** — Visual timeline of memory entries shown at session start
+- **Context Injection** — Top memory entries are injected as hidden context at session start
+- **Clean Working Tree** — All storage is global; the working tree only holds a project marker
+
+## Installation
 
 ```bash
 pi install npm:@aprimediet/memory
 ```
 
+No manual `npm install` or `settings.json` edit needed. The extension registers automatically.
+
+## Usage
+
+### Tools
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `memory_write` | `scope`, `type`, `text`, `tags?` | Save a durable fact/decision to persistent memory |
+| `memory_search` | `query`, `scope?`, `limit?` | Search memory for keywords or questions |
+| `memory_forget` | `id?`, `query?`, `scope?` | Archive (soft-delete) entries by id or keywords |
+
+### Commands
+
+`/memory status` — Show config, entry counts, pruning settings, FTS status  
+`/memory timeline` — Show or reshow the memory timeline widget  
+`/memory list [scope]` — List entries (default: project scope)  
+`/memory search <q>` — Search all memory  
+`/memory prune` — Heuristic prune + background consolidation  
+`/memory forget <id>` — Archive a specific entry  
+`/memory distill` — Manually trigger session distillation
+
 ## Configuration
 
-Config resolves **per-project `~/.pi/projects/<id>/memory.json` → global default `~/.pi/agent/memory.json` → bundled default → env → flags**, re-read on every access. The bundled default is seeded to the global default path on first run. (Per-project config lives in the global dir too — nothing but the marker is written to your working tree.)
-
-```json
-{
-  "enabled": true,
-  "model": "claude-haiku-4-5",
-  "capture": "both",
-  "injection": { "scope": "both", "digestMaxEntries": 20 },
-  "pruning": { "ttlDays": 90, "maxEntries": 200, "consolidateEverySessions": 10 },
-  "useFtsIndex": false
-}
-```
-
-- Flags: `--memory-model <pattern>`, `--memory-disabled`, `--memory-capture <tool|background|both>`.
-- Env: `MEMORY_MODEL`, `MEMORY_DISABLED=1`.
-- `capture`: `tool` (manual only), `background` (distiller only), `both`.
-- `useFtsIndex`: enable SQLite FTS search (requires the optional `better-sqlite3` dependency; falls back to file keyword scan when absent).
-
-## Storage model — clean working tree
-
-The only thing written into your working tree is a single identifier file, `<cwd>/.pi/<project-id>.md`. **Every** memory artifact (entries, index, thoughts, db, config) lives globally, keyed by that project id:
+Config lives in `~/.pi/projects/<id>/memory.json` (NOT in the working tree). Precedence:
 
 ```
-<cwd>/.pi/<project-id>.md            ← the ONLY artifact in your working tree (a pointer)
-
-~/.pi/projects/<project-id>/          ← everything else, global
-  project.json                        metadata: id, name, paths seen, created, lastSeen
-  memory/
-    entries/*.md                      durable memory (source of truth, human-editable)
-    MEMORY.md                         generated index/digest
-  thoughts/<date>-<session>.md        per-session journals written by the distiller
-  queue/                              pending distillation jobs
-  memory.db                           optional SQLite FTS index (rebuildable)
-  memory.json                         optional per-project config override
-
-~/.pi/projects/_global/               cross-project ("global" scope) memory, same shape
+bundled default (memory.json in package)
+→ global default (~/.pi/agent/memory.json)
+→ per-project (~/.pi/projects/<id>/memory.json)
+→ env (MEMORY_MODEL / MEMORY_DISABLED)
+→ flags
 ```
 
-The project id is `<dir-slug>-<8charPathHash>`, recorded in the marker — so it is stable, and if you move the directory the marker keeps memory attached to the same project. Markdown files are the source of truth; `MEMORY.md` and `memory.db` are rebuildable accelerators.
+Default values:
+- `enabled: true`
+- `model: "claude-haiku-4-5"`
+- `capture: "both"` (tool + background)
+- `injection.scope: "both"`, `digestMaxEntries: 20`
+- `pruning.ttlDays: 90`, `maxEntries: 200`, `consolidateEverySessions: 10`
+- `useFtsIndex: false`
 
-## What it does
-- **Intelligent capture (both modes).** The `memory_write` tool lets the agent save facts deliberately; a **background distiller** reads each session's transcript at the end and decides what durable knowledge to keep, deduping against tool-written entries.
-- **No forgetting across sessions.** At session start a compact digest of prior memory is injected as hidden context. The `memory_search` tool recalls more on demand (and bumps usage so recalled entries survive pruning).
-- **Visible timeline at the very start.** The moment pi loads (in the TUI), a claude-mem-style **memory timeline** for the project appears as a banner above the editor — before you type anything — with entries grouped by day (Today / Yesterday / date), each showing a time, type icon, and title, plus project/global counts. It clears once you start working; reshow it anytime with `/memory timeline`.
-- **Self-cleaning.** A cheap heuristic sweep runs every session (TTL on unused entries, supersede resolution, LRU cap); a periodic background model pass consolidates and removes stale or contradicted entries.
-- **Independent & configurable.** All background intelligence runs as a separate `pi` subprocess whose **model is user-selectable**.
+## Architecture
 
-## Tools & command
+### Memory Model
 
-- `memory_write { scope, type, text, tags? }` — save a durable entry.
-- `memory_search { query, scope?, limit? }` — recall entries.
-- `memory_forget { id? | query?, scope? }` — soft-archive entries.
-- `/memory status | timeline | list [scope] | search <q> | prune | forget <id> | distill`
+- **Source of truth:** Markdown files with frontmatter (`id`, `type`, `scope`, `created`, `lastUsed`, `useCount`, `tags`, `source`, `supersedes`, `status`) + body text
+- **Derived index:** `MEMORY.md` is rebuilt on every write; not the source of truth
+- **SQLite FTS:** Optional accelerator (`memory.db`); best-effort — falls back to plain file keyword scan if `better-sqlite3` is missing
 
-## Notes & boundaries
+### Background Agent
 
-- **Your working tree only ever gets `<cwd>/.pi/<project-id>.md`** — a tiny, stable pointer. It is safe to commit (keeps the id consistent across clones) and safe to delete (recreated on next run). All actual memory is global and private to your machine; nothing project-specific is written into the repo.
-- **Secrets are never stored** — the distiller prompts forbid it and entry files are written `0o600`. Still, review project memory before committing.
-- The background distiller is **deferred**: `session_shutdown` enqueues a job and the next session drains the queue, so shutdown is never blocked. A failed distiller leaves the job for retry and never affects the host session.
-- Disable entirely with `--memory-disabled` / `MEMORY_DISABLED=1` / `"enabled": false`.
+The distiller spawns a `pi` subprocess in headless JSON mode (`--mode json --no-session`) with a system prompt. Uses `MEMORY_INTERNAL` env var to prevent recursive re-entrance. Session transcripts are enqueued at `session_shutdown` and drained at the next `session_start` for that project. Consolidation runs every N sessions (`consolidateEverySessions` default: 10).
+
+### Project Identity
+
+Deterministic from project root path: `<slug>-<sha1-hash>` (first 8 hex chars). If a marker file already exists with an `id`, that id wins (stable across renames). Marker file: `<cwd>/.pi/<id>.md` with frontmatter `pi-project: true`.
+
+### Pruning (heuristic)
+
+1. Resolve superseded entries
+2. Archive never-used entries older than `ttlDays` (default: 90)
+3. LRU cap at `maxEntries` (default: 200)
+
+## Troubleshooting
+
+> [!TIP]
+> Check `/memory status` for a quick health check of your memory setup.
+
+- **No memories found:** Verify the extension is enabled (`/memory status` shows `enabled: true`).
+- **FTS not working:** Install `better-sqlite3` (optional dependency). Check `/memory status` for "enabled (better-sqlite3 missing → file scan)".
+- **Distillation not happening:** Ensure `capture` is not `"tool"` and the model flag is set correctly.
+- **Recursive distiller crash:** The `MEMORY_INTERNAL` env guard prevents this. If it still happens, check the spawned process invocation path.
+- **Timeline widget not showing:** Verify `ctx.hasUI` is true and the extension is enabled.
+- **Entry duplicates:** `findDuplicate` uses Jaccard similarity ≥ 0.85 on normalized text.
+
+## Resources
+
+- [Pi Coding Agent](https://github.com/earendil-works/pi-coding-agent) — The agent this extension is built for
+- [TypeBox](https://github.com/sinclairzx81/typebox) — Runtime type validation used for tool parameters
+- [better-sqlite3](https://github.com/JoshuaGoldberg/better-sqlite3) — Optional SQLite FTS accelerator
